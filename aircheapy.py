@@ -149,7 +149,7 @@ def calculate(params, to_single_iata):
                 if i[0] <= j[0] and day_diff <= maxGap and day_diff >= minGap and total_price <= maxINR:
                     d[i[0]+'-'+j[0]] = total_price
 
-        print('len_d:', len(d))
+        # print('len_d:', len(d))
 
         new_d = {}
         if d != {}:
