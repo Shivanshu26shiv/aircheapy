@@ -1,5 +1,5 @@
 '''
-Indian to International and vice-versa cheap flight fare scanner
+Indian to International and vice-versa cheap flight-fare scanner
 '''
 
 from selenium import webdriver
@@ -9,7 +9,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import (NoSuchElementException,
                                         WebDriverException,
                                         ElementClickInterceptedException,
-                                        ElementNotInteractableException)
+                                        ElementNotInteractableException,
+                                        TimeoutException)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -27,20 +28,31 @@ options = Options()
 options.add_argument("--headless")
 options.add_argument('--disable-gpu')
 options.add_argument('--no-sandbox')
-options.add_argument("start-maximized")
-options.add_argument("disable-infobars")
+options.add_argument("--start-maximized")
+options.add_argument("--disable-infobars")
 options.add_argument("--disable-extensions")
 options.add_argument('--disable-dev-shm-usage')        
 
 prefs = {'profile.managed_default_content_settings.images':2, 'disk-cache-size': 0}
 options.add_experimental_option("prefs", prefs)
 
-args = ["hide_console", ]
-
-
+# args = ["hide_console", ]
+        
 def calculate(params, to_single_iata):
-    # driver = webdriver.Chrome(chrome_options=options, executable_path=r'C:\Users\Xarvis-PC\Desktop\chromedriver_win32\chromedriver.exe', service_args=args)
+    # driver = webdriver.Chrome(options=options, executable_path=r'C:\Users\Xarvis-PC\Desktop\chromedriver_win32\chromedriver.exe', service_args=args)
     driver = webdriver.Chrome(options=options, executable_path=r'C:\Users\Xarvis-PC\Desktop\chromedriver_win32\chromedriver.exe')
+
+    def isvisible(attrib_type, locator, timeout=3):
+        try:
+            if attrib_type == 'ID':
+                WebDriverWait(driver, timeout).until(EC.visibility_of_element_located((By.ID, locator)))
+            elif attrib_type == 'TAG_NAME':
+                WebDriverWait(driver, timeout).until(EC.visibility_of_element_located((By.TAG_NAME, locator)))
+            elif attrib_type == 'CLASS_NAME':
+                WebDriverWait(driver, timeout).until(EC.visibility_of_element_located((By.CLASS_NAME, locator)))
+            return True
+        except TimeoutException:
+            return False
     
     try:
         final_output = {}
@@ -53,6 +65,8 @@ def calculate(params, to_single_iata):
         else: maxINR = params['maxINR']
         if 'maxGap' not in params.keys(): maxGap = scan_till_N_days-2
         else: maxGap = params['maxGap']
+        if 'minGap' not in params.keys(): minGap = 0
+        else: minGap = params['minGap']
         if 'cabinClass' not in params.keys(): cabinClass = 'Economy'
         else: cabinClass = params['cabinClass']
         if 'adults' not in params.keys(): adults = 1
@@ -64,28 +78,37 @@ def calculate(params, to_single_iata):
         from_single_iata=list(from_IATA.keys())[0]
         url = 'https://www.happyeasygo.com/flights/'+from_single_iata+'-'+to_single_iata
         url_params = '?adults='+str(adults)+'&cabinClass='+cabinClass
-        print('url+url_params:', url+url_params)
+        # print('url+url_params:', url+url_params)
         driver.get(url+url_params)
         # driver.refresh()
         driver.execute_script("location.reload(true);")
-        time.sleep(5)
-        driver.find_element_by_css_selector('body')
-        webdriver.ActionChains(driver).send_keys(Keys.PAGE_UP).perform()
+
+        if not isvisible('TAG_NAME', 'body', 5):
+            return {}
+        
+        webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+        webdriver.ActionChains(driver).send_keys(Keys.HOME).perform()
 
         round_trip = from_IATA[from_single_iata]+'->'+to_IATA[to_single_iata]+'->'+from_IATA[from_single_iata]
-        # print('Path:', round_trip)
+        
         ld={}
         def calender(id_name):
-            try:
-                time.sleep(2)
-                driver.find_element_by_id(id_name).click()
-            except:
+
+            if isvisible('ID', id_name, 10):
+                el = driver.find_element_by_id(id_name)
+                actions = webdriver.ActionChains(driver)
                 try:
-                    time.sleep(4)
-                    driver.find_element_by_id(id_name).click()
-                except:
-                    print('Poor connectivity or unknown error... skipping')
-                    return {}
+                    actions.move_to_element(el).click().perform()
+                except ElementClickInterceptedException:
+                    print('Issue:', driver.current_url)
+                    return {}    
+                # el.click()
+                # driver.execute_script("arguments[0].scrollIntoView();", el)
+            else:
+                return {}
+            
+            #    print('Poor connectivity or unknown error at '+driver.current_url+' ... skipping')
+            #    return {}
                 
             # not working
             # el=driver.find_element_by_id(id_name)
@@ -112,22 +135,28 @@ def calculate(params, to_single_iata):
             depart  = calender('D_date')[round_trip]
             arrival = calender('R_date')[round_trip]
         except KeyError:
+            print('here')
             driver.quit()
             return
 
         d={}
+        total_price = 0
         for i in depart:
             for j in arrival:
-                if i[0] <= j[0] and ((datetime.strptime(j[0], "%Y%m%d")-datetime.strptime(i[0], "%Y%m%d")).days <= maxGap) and i[1]+j[1] <= maxINR:
-                    d[i[0]+'-'+j[0]] = i[1]+j[1]
+                total_price = (i[1]+j[1])*adults
+                day_diff = (datetime.strptime(j[0], "%Y%m%d")-datetime.strptime(i[0], "%Y%m%d")).days
+                # print('total_price:', total_price)
+                if i[0] <= j[0] and day_diff <= maxGap and day_diff >= minGap and total_price <= maxINR:
+                    d[i[0]+'-'+j[0]] = total_price
 
-        # print('d:', d)
+        print('len_d:', len(d))
 
         new_d = {}
         if d != {}:
             d=sorted(d.items(), key=lambda item: item[1])[:cheapest_N_results]
 
-            for date_strings, cached_price in d:
+            for date_strings, total_cached_price in d:
+                cached_price = total_cached_price / adults
                 from_str = datetime.strptime(date_strings.split('-')[0], '%Y%m%d')
                 to_str   = datetime.strptime(date_strings.split('-')[1], '%Y%m%d')
                 new_url = url+'/'+from_str.strftime("%Y-%m-%d")+'-'+to_str.strftime("%Y-%m-%d")+url_params
@@ -137,44 +166,36 @@ def calculate(params, to_single_iata):
                     driver.get(new_url)
                     driver.execute_script("location.reload(true);")
                     key = key+' ['+driver.current_url+']'
-                    time.sleep(5)
 
-                    
-                    
+                    if not isvisible('CLASS_NAME', 'fpr', 5):
+                        continue
+            
                     new_price = driver.find_elements_by_class_name('fpr')[0].text
                     new_price = eval((new_price.strip()).replace(',',''))
                     value = new_price
-                except (NoSuchElementException,
-                        ElementClickInterceptedException,
-                        ElementNotInteractableException):
-                    try:
-                        time.sleep(3)
-                        new_price = driver.find_elements_by_class_name('fpr')[0].text
-                        new_price = eval((new_price.strip()).replace(',',''))
-                        value = new_price
-                    except:
-                        key = key+' (cached)'
-                        value = cached_price
                 except:
                     ele=driver.find_element_by_id('no_result')
-                    # print('>>', ele.get_attribute("display"))
-                    if ele.get_attribute("display") == None:
+                    if ele.get_attribute("style") != "display:none;":
+                        print('no flight data-key:', key, ele.get_attribute("style"))
                         continue
                     else:
                         key = key+' (cached)'
                         value = cached_price
-
-                new_d[key] = value
-
+                        
+                if value*adults <= maxINR:
+                    new_d[key] = value*adults
+                else: continue
+                    
             new_d=sorted(new_d.items(), key=lambda item: item[1])
             # print('new_d:', round_trip, new_d)
-            final_output[round_trip] = new_d
-        
+            if new_d != []:
+                final_output[round_trip] = new_d
         driver.quit()
         return
     
     finally:
-        pp.pprint(final_output)
+        if final_output != {}:
+            pp.pprint(final_output)
         driver.quit()
 
 
@@ -190,6 +211,7 @@ def aircheapy(params, get_current_ips_IATA, use_threading):
     cheapest_N_results = params['cheapest_N_results']
     maxINR = params['maxINR']
     maxGap = params['maxGap']
+    minGap = params['minGap']
     to_IATA = params['to_IATA']
 
     from_IATA={}
@@ -204,12 +226,12 @@ def aircheapy(params, get_current_ips_IATA, use_threading):
 
     params['from_IATA'] = from_IATA
     
-    print('params:', params)
+    print('params:', params, '\n')
 
     try:
         if use_threading:
             func = partial(calculate, params)
-            pool = ThreadPool(processes=multiprocessing.cpu_count())
+            pool = ThreadPool(processes=3)
             pool.map(func, list(to_IATA.keys()))
             pool.close()
             pool.join()
@@ -221,20 +243,28 @@ def aircheapy(params, get_current_ips_IATA, use_threading):
         print('Start:', tim, ' Stop:', datetime.now())
 
 
+budget_dest_dict = {'DXB': 'Dubai', 'BKK': 'Bangkok', 'SIN': 'Singapore',
+                   'PBH': 'Paro', 'KTM': 'Kathmandu', 'KUL': 'Sepang_Malaysia', 'SGN': 'Ho_Chi_Vietnam',
+                   'CAI': 'Cairo', 'NBO': 'Nairobi', 'SEZ': 'Seychelles','PNH': 'Combodia', 'AMM':'Queen_Jordan',
+                    'DPS': 'Denpasar_Indonesia', 'SAW': 'Istanbul'}
+
+luxury_dest_dict = {'LHR': 'London', 'CDG': 'Paris', 'HKG': 'Hong Kong', 'FCO': 'Rome',
+                   'DXB': 'Dubai', 'SIN': 'Singapore', 'PVG': 'Shanghai', 'KUL': 'Sepang_Malaysia', 
+                   'SEZ': 'Seychelles', 'HND':'Tokyo'}
+
 params = {
-        'maxINR': 30000,
-        'maxGap': 10,
-        'cheapest_N_results': 2,
-        'scan_till_N_days': 30,
+        'maxINR': 40000,
+        'minGap': 4,
+        'maxGap': 60,
+        'cheapest_N_results': 3,
+        'scan_till_N_days': 60,
         'adults': 2,
-        'cabinClass': 'Premium Economy', # Economy, Business, First, Premium Economy
-        # 'from_IATA': {'BLR': 'Bengaluru'}, 
-        'to_IATA':
-                {
-                 # 'BKK': 'Bangkok',
-                 'DXB': 'Dubai'
-                 }
+        'cabinClass': 'Economy', # Economy, Business, First, Premium Economy
+        'from_IATA': {'BLR': 'Bengaluru'}, 
+        'to_IATA': luxury_dest_dict
+        # {'PBH': 'Paro', 'KTM': 'Kathmandu', 'KUL': 'Sepang_Malaysia', 'PNH': 'Combodia'}
         }
 
-    
-aircheapy(params, get_current_ips_IATA=True, use_threading=True)
+
+aircheapy(params, get_current_ips_IATA=False, use_threading=True)
+
