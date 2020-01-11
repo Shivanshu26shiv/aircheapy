@@ -107,10 +107,6 @@ def calculate(params, to_single_iata):
                 except ElementClickInterceptedException:
                     print('Issue:', driver.current_url)
                     return {}
-                except:
-                    print(333)
-                # el.click()
-                # driver.execute_script("arguments[0].scrollIntoView();", el)
             else:
                 return {}
             
@@ -143,7 +139,6 @@ def calculate(params, to_single_iata):
             depart  = calender('D_date')[round_trip]            
             arrival = calender('R_date')[round_trip]
         except KeyError:
-            print('KeyError')
             driver.quit()
             return
 
@@ -158,7 +153,8 @@ def calculate(params, to_single_iata):
                 if i[0] <= j[0] and day_diff <= maxGap and day_diff >= minGap and total_price <= maxINR:
                     d[i[0]+'-'+j[0]] = total_price
 
-        print('len_d:', len(d))
+        # if len(d)>0:
+        # print('Path '+round_trip+' available...')
 
         new_d = {}
         if d != {}:
@@ -186,7 +182,6 @@ def calculate(params, to_single_iata):
                     new_price = eval((new_price.strip()).replace(',',''))
                     value = new_price
                 except:
-                    # print(111)
                     ele=driver.find_element_by_id('no_result')
                     if ele.get_attribute("style") != "display:none;":
                         print('no flight data-key:', key, ele.get_attribute("style"))
@@ -267,14 +262,14 @@ luxury_dest_dict = {'LHR': 'London', 'CDG': 'Paris', 'HKG': 'Hong Kong', 'FCO': 
 
 params = {
         'maxINR': 30000,
-        'minGap': 0,
+        'minGap': 3,
         'maxGap': 30,
         'cheapest_N_results': 3,
         'scan_till_N_days': 60,
         'adults': 2,
         'cabinClass': 'Economy', # Economy, Business, First, Premium Economy
         'from_IATA': {'BLR': 'Bengaluru'}, 
-        'to_IATA': {'DXB': 'Dubai', 'KUL': 'Sepang_Malaysia', 'SIN': 'Singapore'}
+        'to_IATA': {'DXB': 'Dubai', 'KUL': 'Sepang_Malaysia', 'DPS': 'Denpasar_Indonesia'}
         }
 
 
