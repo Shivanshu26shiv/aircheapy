@@ -23,17 +23,21 @@ import geocoder
 import requests
 import time
 import sys
+import os
+
+os.environ["LANG"] = "en_US.UTF-8"
 
 options = Options()
 options.add_argument("--headless")
 options.add_argument('--disable-gpu')
 options.add_argument('--no-sandbox')
 options.add_argument("--start-maximized")
-options.add_argument("--disable-infobars")
+# options.add_argument("--disable-infobars")
 options.add_argument("--disable-extensions")
 options.add_argument('--disable-dev-shm-usage')        
 
-prefs = {'profile.managed_default_content_settings.images':2, 'disk-cache-size': 0}
+# prefs = {'profile.managed_default_content_settings.images':2, 'disk-cache-size': 0}
+prefs = {'profile.managed_default_content_settings.images':2}
 options.add_experimental_option("prefs", prefs)
 
 # args = ["hide_console", ]
@@ -80,6 +84,7 @@ def calculate(params, to_single_iata):
         url_params = '?adults='+str(adults)+'&cabinClass='+cabinClass
         # print('url+url_params:', url+url_params)
         driver.get(url+url_params)
+        time.sleep(4)
         # driver.refresh()
         driver.execute_script("location.reload(true);")
 
@@ -101,7 +106,9 @@ def calculate(params, to_single_iata):
                     actions.move_to_element(el).click().perform()
                 except ElementClickInterceptedException:
                     print('Issue:', driver.current_url)
-                    return {}    
+                    return {}
+                except:
+                    print(333)
                 # el.click()
                 # driver.execute_script("arguments[0].scrollIntoView();", el)
             else:
@@ -129,17 +136,19 @@ def calculate(params, to_single_iata):
                     break
                 
             ld[round_trip] = l
+            # print('ld:', ld)
             return ld
 
         try:
-            depart  = calender('D_date')[round_trip]
+            depart  = calender('D_date')[round_trip]            
             arrival = calender('R_date')[round_trip]
         except KeyError:
-            print('here')
+            print('KeyError')
             driver.quit()
             return
 
         d={}
+        
         total_price = 0
         for i in depart:
             for j in arrival:
@@ -149,7 +158,7 @@ def calculate(params, to_single_iata):
                 if i[0] <= j[0] and day_diff <= maxGap and day_diff >= minGap and total_price <= maxINR:
                     d[i[0]+'-'+j[0]] = total_price
 
-        # print('len_d:', len(d))
+        print('len_d:', len(d))
 
         new_d = {}
         if d != {}:
@@ -164,16 +173,20 @@ def calculate(params, to_single_iata):
                 key = (from_str.strftime("%d %B %Y (%A)")+' to '+to_str.strftime("%d %B %Y (%A)"))
                 try:
                     driver.get(new_url)
+                    time.sleep(4)
                     driver.execute_script("location.reload(true);")
                     key = key+' ['+driver.current_url+']'
 
-                    if not isvisible('CLASS_NAME', 'fpr', 5):
+                    # print(driver.find_elements_by_class_name('fpr')[0])
+                    if not isvisible('CLASS_NAME', 'fpr', 12):
+                        print('Poor connection... at '+new_url)
                         continue
             
                     new_price = driver.find_elements_by_class_name('fpr')[0].text
                     new_price = eval((new_price.strip()).replace(',',''))
                     value = new_price
                 except:
+                    # print(111)
                     ele=driver.find_element_by_id('no_result')
                     if ele.get_attribute("style") != "display:none;":
                         print('no flight data-key:', key, ele.get_attribute("style"))
@@ -184,7 +197,6 @@ def calculate(params, to_single_iata):
                         
                 if value*adults <= maxINR:
                     new_d[key] = value*adults
-                else: continue
                     
             new_d=sorted(new_d.items(), key=lambda item: item[1])
             # print('new_d:', round_trip, new_d)
@@ -197,6 +209,7 @@ def calculate(params, to_single_iata):
         if final_output != {}:
             pp.pprint(final_output)
         driver.quit()
+        return
 
 
 def aircheapy(params, get_current_ips_IATA, use_threading):
@@ -253,16 +266,15 @@ luxury_dest_dict = {'LHR': 'London', 'CDG': 'Paris', 'HKG': 'Hong Kong', 'FCO': 
                    'SEZ': 'Seychelles', 'HND':'Tokyo'}
 
 params = {
-        'maxINR': 40000,
-        'minGap': 4,
-        'maxGap': 60,
+        'maxINR': 30000,
+        'minGap': 0,
+        'maxGap': 30,
         'cheapest_N_results': 3,
         'scan_till_N_days': 60,
         'adults': 2,
         'cabinClass': 'Economy', # Economy, Business, First, Premium Economy
         'from_IATA': {'BLR': 'Bengaluru'}, 
-        'to_IATA': luxury_dest_dict
-        # {'PBH': 'Paro', 'KTM': 'Kathmandu', 'KUL': 'Sepang_Malaysia', 'PNH': 'Combodia'}
+        'to_IATA': {'DXB': 'Dubai', 'KUL': 'Sepang_Malaysia', 'SIN': 'Singapore'}
         }
 
 
