@@ -42,7 +42,8 @@ options.add_experimental_option("prefs", prefs)
 
 # args = ["hide_console", ]
         
-def calculate(params, to_single_iata):
+def calculate(to_single_iata):
+
     # driver = webdriver.Chrome(options=options, executable_path=r'C:\Users\Xarvis-PC\Desktop\chromedriver_win32\chromedriver.exe', service_args=args)
     driver = webdriver.Chrome(options=options, executable_path=r'C:\Users\Xarvis-PC\Desktop\chromedriver_win32\chromedriver.exe')
 
@@ -61,30 +62,12 @@ def calculate(params, to_single_iata):
     try:
         final_output = {}
         
-        if 'scan_till_N_days' not in params.keys(): scan_till_N_days = 30
-        else: scan_till_N_days = params['scan_till_N_days']
-        if 'cheapest_N_results' not in params.keys(): cheapest_N_results = None
-        else: cheapest_N_results = params['cheapest_N_results']
-        if 'maxINR' not in params.keys(): maxINR = 9999999
-        else: maxINR = params['maxINR']
-        if 'maxGap' not in params.keys(): maxGap = scan_till_N_days-2
-        else: maxGap = params['maxGap']
-        if 'minGap' not in params.keys(): minGap = 0
-        else: minGap = params['minGap']
-        if 'cabinClass' not in params.keys(): cabinClass = 'Economy'
-        else: cabinClass = params['cabinClass']
-        if 'adults' not in params.keys(): adults = 1
-        else: adults = params['adults']
-        
-        to_IATA = params['to_IATA']        
-        from_IATA = params['from_IATA']
-    
         from_single_iata=list(from_IATA.keys())[0]
         url = 'https://www.happyeasygo.com/flights/'+from_single_iata+'-'+to_single_iata
         url_params = '?adults='+str(adults)+'&cabinClass='+cabinClass
         # print('url+url_params:', url+url_params)
         driver.get(url+url_params)
-        time.sleep(4)
+        time.sleep(10)
         # driver.refresh()
         driver.execute_script("location.reload(true);")
 
@@ -94,7 +77,10 @@ def calculate(params, to_single_iata):
         webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
         webdriver.ActionChains(driver).send_keys(Keys.HOME).perform()
 
-        round_trip = from_IATA[from_single_iata]+'->'+to_IATA[to_single_iata]+'->'+from_IATA[from_single_iata]
+        if round_trip:
+            trip_type = from_IATA[from_single_iata]+'->'+to_IATA[to_single_iata]+'->'+from_IATA[from_single_iata]
+        else:
+            trip_type = from_IATA[from_single_iata]+'->'+to_IATA[to_single_iata]
         
         ld={}
         def calender(id_name):
@@ -107,7 +93,10 @@ def calculate(params, to_single_iata):
                 except ElementClickInterceptedException:
                     print('Issue:', driver.current_url)
                     return {}
+                except:
+                    print(222)
             else:
+                print('Poor connection!')
                 return {}
             
             #    print('Poor connectivity or unknown error at '+driver.current_url+' ... skipping')
@@ -117,9 +106,14 @@ def calculate(params, to_single_iata):
             # el=driver.find_element_by_id(id_name)
             # driver.execute_script("arguments[0].click();", el)
             
-            time.sleep(2)
+            time.sleep(5)
             l=[]
+            # print('>>>', driver.current_url)
+            # print('>>', len(driver.find_elements_by_class_name(r" ")))
+            
             for c, e in enumerate(driver.find_elements_by_xpath('//td[@data-handler="selectDay"]')):
+                # print(c, e)
+                
                 try:
                     if e.get_attribute("title") != '':
                         # print('Airfare:', e.get_attribute("title"))
@@ -131,30 +125,42 @@ def calculate(params, to_single_iata):
                 if c==scan_till_N_days:
                     break
                 
-            ld[round_trip] = l
+            ld[trip_type] = l
             # print('ld:', ld)
             return ld
 
         try:
-            depart  = calender('D_date')[round_trip]            
-            arrival = calender('R_date')[round_trip]
+            depart  = calender('D_date')[trip_type]
+            if round_trip:
+                arrival = calender('R_date')[trip_type]
         except KeyError:
             driver.quit()
             return
 
         d={}
-        
         total_price = 0
-        for i in depart:
-            for j in arrival:
-                total_price = (i[1]+j[1])*adults
-                day_diff = (datetime.strptime(j[0], "%Y%m%d")-datetime.strptime(i[0], "%Y%m%d")).days
+
+        # print('depart:', depart)
+        # print('arrival:', arrival)
+        
+        if round_trip:
+            for i in depart:
+                for j in arrival:
+                    total_price = (i[1]+j[1]) * adults
+                    day_diff = (datetime.strptime(j[0], "%Y%m%d")-datetime.strptime(i[0], "%Y%m%d")).days
+                    # print('total_price:', total_price, day_diff, i[0], j[0])
+                    if day_diff >= 0 and day_diff <= maxGap and day_diff >= minGap and i[0] <= j[0] and total_price <= maxINR:
+                        d[i[0]+'-'+j[0]] = total_price
+        else:
+            for i in depart:
+                total_price = (i[1]) * adults
                 # print('total_price:', total_price)
-                if i[0] <= j[0] and day_diff <= maxGap and day_diff >= minGap and total_price <= maxINR:
-                    d[i[0]+'-'+j[0]] = total_price
+                if total_price <= maxINR:
+                    d[i[0]] = total_price
 
         # if len(d)>0:
-        # print('Path '+round_trip+' available...')
+        # print('d:', d)
+        # print('Path '+trip_type+' available...')
 
         new_d = {}
         if d != {}:
@@ -163,10 +169,16 @@ def calculate(params, to_single_iata):
             for date_strings, total_cached_price in d:
                 cached_price = total_cached_price / adults
                 from_str = datetime.strptime(date_strings.split('-')[0], '%Y%m%d')
-                to_str   = datetime.strptime(date_strings.split('-')[1], '%Y%m%d')
-                new_url = url+'/'+from_str.strftime("%Y-%m-%d")+'-'+to_str.strftime("%Y-%m-%d")+url_params
+
+                if round_trip:
+                    to_str = datetime.strptime(date_strings.split('-')[1], '%Y%m%d')
+                    new_url = url+'/'+from_str.strftime("%Y-%m-%d")+'-'+to_str.strftime("%Y-%m-%d")+url_params
+                    key = (from_str.strftime("%d %B %Y (%A)")+' to '+to_str.strftime("%d %B %Y (%A)"))
+                else:
+                    new_url = url+'/'+from_str.strftime("%Y-%m-%d")+url_params
+                    key = from_str.strftime("%d %B %Y (%A)")
+                    
                 # print('new_url:', new_url)
-                key = (from_str.strftime("%d %B %Y (%A)")+' to '+to_str.strftime("%d %B %Y (%A)"))
                 try:
                     driver.get(new_url)
                     time.sleep(4)
@@ -174,30 +186,41 @@ def calculate(params, to_single_iata):
                     key = key+' ['+driver.current_url+']'
 
                     # print(driver.find_elements_by_class_name('fpr')[0])
-                    if not isvisible('CLASS_NAME', 'fpr', 12):
-                        print('Poor connection... at '+new_url)
+                    
+                    # class_name = 'fpr'
+                    class_name = 'fpr' if round_trip else 'price-origin'
+                    
+                    if not isvisible('CLASS_NAME', class_name, 12):
+                        print('Poor connection... at '+new_url, class_name)
                         continue
             
-                    new_price = driver.find_elements_by_class_name('fpr')[0].text
+                    new_price = driver.find_elements_by_class_name(class_name)[0].text
                     new_price = eval((new_price.strip()).replace(',',''))
                     value = new_price
                 except:
-                    ele=driver.find_element_by_id('no_result')
-                    if ele.get_attribute("style") != "display:none;":
-                        print('no flight data-key:', key, ele.get_attribute("style"))
+                    driver.refresh()
+                    time.sleep(4)
+                    if not isvisible('CLASS_NAME', 'no-search-result', 10):
+                        print('Poor connection.. at '+new_url)
+                        continue
+
+                    ele = driver.find_element_by_id('no_result')
+
+                    if ele.get_attribute("style").replace(' ', '').strip() != "display:none;":
+                        print('No flight data-key:', key, ele.get_attribute("style"))
                         continue
                     else:
                         key = key+' (cached)'
                         value = cached_price
-                        
-                if value*adults <= maxINR:
+
+                if value * adults <= maxINR:
                     new_d[key] = value*adults
                     
             new_d=sorted(new_d.items(), key=lambda item: item[1])
-            # print('new_d:', round_trip, new_d)
+            # print('new_d:', trip_type, new_d)
             if new_d != []:
-                final_output[round_trip] = new_d
-        driver.quit()
+                final_output[trip_type] = new_d
+        # driver.quit()
         return
     
     finally:
@@ -206,8 +229,19 @@ def calculate(params, to_single_iata):
         driver.quit()
         return
 
-
-def aircheapy(params, get_current_ips_IATA, use_threading):
+round_trip = True
+def aircheapy(params, get_current_ips_IATA=False, use_threading=True):
+    
+    global scan_till_N_days
+    global cheapest_N_results
+    global maxINR
+    global cabinClass
+    global adults
+    global maxGap
+    global minGap
+    global from_IATA
+    global to_IATA
+    global round_trip
 
     assert sys.version_info >= (2, 7), 'Python version should be at least 2.7'
     assert (not(get_current_ips_IATA and 'from_IATA' in params.keys()) and
@@ -215,13 +249,25 @@ def aircheapy(params, get_current_ips_IATA, use_threading):
     
     tim = datetime.now()
     
-    scan_till_N_days = params['scan_till_N_days']
-    cheapest_N_results = params['cheapest_N_results']
-    maxINR = params['maxINR']
-    maxGap = params['maxGap']
-    minGap = params['minGap']
     to_IATA = params['to_IATA']
 
+    if 'scan_till_N_days' not in params.keys(): scan_till_N_days = 30
+    else: scan_till_N_days = params['scan_till_N_days']
+    if 'cheapest_N_results' not in params.keys(): cheapest_N_results = None
+    else: cheapest_N_results = params['cheapest_N_results']
+    if 'maxINR' not in params.keys(): maxINR = 9999999
+    else: maxINR = params['maxINR']
+    if 'cabinClass' not in params.keys(): cabinClass = 'Economy'
+    else: cabinClass = params['cabinClass']
+    if 'adults' not in params.keys(): adults = 1
+    else: adults = params['adults']
+        
+    if round_trip:
+        if 'maxGap' not in params.keys(): maxGap = scan_till_N_days-2
+        else: maxGap = params['maxGap']
+        if 'minGap' not in params.keys(): minGap = 0
+        else: minGap = params['minGap']
+    
     from_IATA={}
     # getting current ip's iata code
     if get_current_ips_IATA:
@@ -231,21 +277,32 @@ def aircheapy(params, get_current_ips_IATA, use_threading):
             from_IATA[eval(r.content)['IATA']] = str(g[0]).split(',')[0].lstrip('[')
     else:
         from_IATA = params['from_IATA']
+        if len(from_IATA) != 1:
+            print("From should be only 1 city, currently "+str(len(from_IATA))+" are given. Exiting.")
+            return
 
     params['from_IATA'] = from_IATA
-    
+
+    dup_check = list(from_IATA.keys())[0]
+    if dup_check in list(to_IATA.keys()):
+        print('From-To cities same. Skipping:'+to_IATA.pop(dup_check))
+
     print('params:', params, '\n')
+    
+    if to_IATA == {}:
+        print('From-To cities same. Exiting.')
+        return
 
     try:
         if use_threading:
-            func = partial(calculate, params)
+            func = partial(calculate)
             pool = ThreadPool(processes=3)
             pool.map(func, list(to_IATA.keys()))
             pool.close()
             pool.join()
         else:
             for to_single_iata in to_IATA.keys():
-                calculate(params, to_single_iata)     
+                calculate(to_single_iata)     
     finally:
         # pp.pprint(final_output)
         print('Start:', tim, ' Stop:', datetime.now())
@@ -261,15 +318,16 @@ luxury_dest_dict = {'LHR': 'London', 'CDG': 'Paris', 'HKG': 'Hong Kong', 'FCO': 
                    'SEZ': 'Seychelles', 'HND':'Tokyo'}
 
 params = {
+        # weekend start/stop
         'maxINR': 30000,
-        'minGap': 3,
-        'maxGap': 30,
-        'cheapest_N_results': 3,
-        'scan_till_N_days': 60,
-        'adults': 2,
+        'minGap': 6, # ignored if round_trip flag is off
+        # 'maxGap': 3, # ignored if round_trip flag is off
+        'cheapest_N_results': 1,
+        'scan_till_N_days': 30,
+        'adults': 2, 
         'cabinClass': 'Economy', # Economy, Business, First, Premium Economy
-        'from_IATA': {'BLR': 'Bengaluru'}, 
-        'to_IATA': {'DXB': 'Dubai', 'KUL': 'Sepang_Malaysia', 'DPS': 'Denpasar_Indonesia'}
+        'from_IATA': {'BLR': 'Bengaluru'},
+        'to_IATA': luxury_dest_dict
         }
 
 
