@@ -6,19 +6,15 @@ from selenium import webdriver
 from datetime import datetime
 from datetime import timedelta
 from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import (NoSuchElementException,
-                                        WebDriverException,
-                                        ElementClickInterceptedException,
-                                        ElementNotInteractableException,
+from selenium.common.exceptions import (ElementClickInterceptedException,
                                         TimeoutException)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from functools import partial
-import multiprocessing
 from multiprocessing.pool import ThreadPool
-import pprint as pp
+import pprint
 import geocoder
 import requests
 import time
@@ -145,14 +141,23 @@ def calculate(to_single_iata):
         
         if round_trip:
             for i in depart:
+                if depart_on_weekend:
+                    if datetime.strptime(i[0], "%Y%m%d").weekday() < 5:
+                        continue
                 for j in arrival:
+                    if arrive_on_weekend:
+                        if datetime.strptime(j[0], "%Y%m%d").weekday() < 5:
+                            continue
                     total_price = (i[1]+j[1]) * adults
                     day_diff = (datetime.strptime(j[0], "%Y%m%d")-datetime.strptime(i[0], "%Y%m%d")).days
                     # print('total_price:', total_price, day_diff, i[0], j[0])
-                    if day_diff >= 0 and day_diff <= maxGap and day_diff >= minGap and i[0] <= j[0] and total_price <= maxINR:
+                    if 0 <= day_diff <= maxGap and day_diff >= minGap and i[0] <= j[0] and total_price <= maxINR:
                         d[i[0]+'-'+j[0]] = total_price
         else:
             for i in depart:
+                if depart_on_weekend:
+                    if datetime.strptime(i[0], "%Y%m%d").weekday() < 5:
+                        continue
                 total_price = (i[1]) * adults
                 # print('total_price:', total_price)
                 if total_price <= maxINR:
@@ -190,7 +195,7 @@ def calculate(to_single_iata):
                     # class_name = 'fpr'
                     class_name = 'fpr' if round_trip else 'price-origin'
                     
-                    if not isvisible('CLASS_NAME', class_name, 12):
+                    if not isvisible('CLASS_NAME', class_name, 20):
                         print('Poor connection... at '+new_url, class_name)
                         continue
             
@@ -225,11 +230,11 @@ def calculate(to_single_iata):
     
     finally:
         if final_output != {}:
-            pp.pprint(final_output)
+            pprint.pprint(final_output)
         driver.quit()
         return
 
-round_trip = True
+
 def aircheapy(params, get_current_ips_IATA=False, use_threading=True):
     
     global scan_till_N_days
@@ -242,12 +247,14 @@ def aircheapy(params, get_current_ips_IATA=False, use_threading=True):
     global from_IATA
     global to_IATA
     global round_trip
+    global depart_on_weekend
+    global arrive_on_weekend
 
     assert sys.version_info >= (2, 7), 'Python version should be at least 2.7'
     assert (not(get_current_ips_IATA and 'from_IATA' in params.keys()) and
             (not(get_current_ips_IATA is False and 'from_IATA' not in params.keys()))), "Flag 'get_current_ips_IATA' and constant 'from_IATA' are mutually exclusive"
     
-    tim = datetime.now()
+    end_time = datetime.now()
     
     to_IATA = params['to_IATA']
 
@@ -261,12 +268,24 @@ def aircheapy(params, get_current_ips_IATA=False, use_threading=True):
     else: cabinClass = params['cabinClass']
     if 'adults' not in params.keys(): adults = 1
     else: adults = params['adults']
-        
+    if 'round_trip' not in params.keys(): round_trip = False
+    else: round_trip = params['round_trip']
+    if 'depart_on_weekend' not in params.keys(): depart_on_weekend = False
+    else: depart_on_weekend = params['depart_on_weekend']
+
+
     if round_trip:
         if 'maxGap' not in params.keys(): maxGap = scan_till_N_days-2
         else: maxGap = params['maxGap']
         if 'minGap' not in params.keys(): minGap = 0
         else: minGap = params['minGap']
+        if 'arrive_on_weekend' not in params.keys(): arrive_on_weekend = False
+        else: arrive_on_weekend = params['arrive_on_weekend']
+    else:
+        maxGap = scan_till_N_days-2
+        minGap = 0
+        arrive_on_weekend = False
+
     
     from_IATA={}
     # getting current ip's iata code
@@ -287,7 +306,9 @@ def aircheapy(params, get_current_ips_IATA=False, use_threading=True):
     if dup_check in list(to_IATA.keys()):
         print('From-To cities same. Skipping:'+to_IATA.pop(dup_check))
 
-    print('params:', params, '\n')
+    print('Params:', '\n')
+    pprint.pprint(params)
+    print('')
     
     if to_IATA == {}:
         print('From-To cities same. Exiting.')
@@ -305,31 +326,33 @@ def aircheapy(params, get_current_ips_IATA=False, use_threading=True):
                 calculate(to_single_iata)     
     finally:
         # pp.pprint(final_output)
-        print('Start:', tim, ' Stop:', datetime.now())
+        print('\nStart:', end_time, ' Stop:', datetime.now())
 
 
-budget_dest_dict = {'DXB': 'Dubai', 'BKK': 'Bangkok', 'SIN': 'Singapore',
+budget_dict = {'DXB': 'Dubai', 'BKK': 'Bangkok', 'SIN': 'Singapore',
                    'PBH': 'Paro', 'KTM': 'Kathmandu', 'KUL': 'Sepang_Malaysia', 'SGN': 'Ho_Chi_Vietnam',
                    'CAI': 'Cairo', 'NBO': 'Nairobi', 'SEZ': 'Seychelles','PNH': 'Combodia', 'AMM':'Queen_Jordan',
                     'DPS': 'Denpasar_Indonesia', 'SAW': 'Istanbul'}
 
-luxury_dest_dict = {'LHR': 'London', 'CDG': 'Paris', 'HKG': 'Hong Kong', 'FCO': 'Rome',
+luxury_dict = {'LHR': 'London', 'CDG': 'Paris', 'HKG': 'Hong Kong', 'FCO': 'Rome',
                    'DXB': 'Dubai', 'SIN': 'Singapore', 'PVG': 'Shanghai', 'KUL': 'Sepang_Malaysia', 
                    'SEZ': 'Seychelles', 'HND':'Tokyo'}
 
 params = {
-        # weekend start/stop
         'maxINR': 30000,
-        'minGap': 6, # ignored if round_trip flag is off
-        # 'maxGap': 3, # ignored if round_trip flag is off
-        'cheapest_N_results': 1,
+        'cheapest_N_results': 3,
         'scan_till_N_days': 30,
         'adults': 2, 
         'cabinClass': 'Economy', # Economy, Business, First, Premium Economy
         'from_IATA': {'BLR': 'Bengaluru'},
-        'to_IATA': luxury_dest_dict
+        'to_IATA': {'DXB': 'Dubai', 'BKK': 'Bangkok'},
+        'depart_on_weekend': False,
+        'round_trip': True,
+        # below 3 flags are ignored if round_trip flag is off
+        'minGap': 3, 
+        # 'maxGap': 3, 
+        'arrive_on_weekend': True
         }
 
 
 aircheapy(params, get_current_ips_IATA=False, use_threading=True)
-
