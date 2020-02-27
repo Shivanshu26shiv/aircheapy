@@ -14,8 +14,8 @@ With aircheapy, you can get cheapest flight fares displayed on Happyeasygo.com -
 	'to_IATA': {'BKK': 'Bangkok', 'DXB': 'Dubai'}
 	
 	# below 3 flags are ignored if round_trip flag is off
-	'minGap': 3,
-	# 'maxGap': 3, 
+	'minGap': 3, # minimum gap between days of departure & arrival 
+	# 'maxGap': 3, # maximum gap between days of departure & arrival 
 	'arrive_on_weekend': True,
 	}
 
